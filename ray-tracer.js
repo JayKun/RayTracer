@@ -28,9 +28,13 @@ Declare_Any_Class( "Ball",              // The following data members of a ball 
   //        Tip:  Once intersect() is done, call it in trace() as you loop through all the spheres until you've found the ray's nearest available intersection.  Simply
   //        return a dummy color if the intersection tests positiv.  This will show the spheres' outlines, giving early proof that you did intersect() correctly.
         var inv_trans = this.inverse_transform; 
-        var S = mult_vec(inv_trans, ray.origin);
+        var temp_origin = ray.origin.slice();
+        var temp_dir = ray.dir.slice(); 
+
+        var S = mult_vec(inv_trans, temp_origin);
         S=S.slice(0,3);
-        var C = mult_vec(inv_trans, ray.dir);
+
+        var C = mult_vec(inv_trans, temp_dir);
         C=C.slice(0,3);
 
         var a = dot(C, C);
@@ -42,35 +46,26 @@ Declare_Any_Class( "Ball",              // The following data members of a ball 
 
         // 2 Solutions
         if(discriminant > 0 ){
-          var sol_1=(-b+term)/a;
-          var sol_2=(-b-term)/a; 
+          var t_1=(-b-term)/a;
+          var t_2=(-b+term)/a; 
 
-          var hit_1=scale_vec(sol_1, ray.dir);
-          dist_1=Math.sqrt(dot(hit_1, hit_1));
+          var t = t_1;
 
-          var hit_2=scale_vec(sol_2, ray.dir);
-          dist_2=Math.sqrt(dot(hit_2, hit_2));
-
-          if(dist_1 > minimum_dist && dist_1 > dist_2){
-            var hit=hit_2;
-            var dist=dist_2;
+          if(t_1 < minimum_dist || t_1 > t_2){
+            // var hit=hit_2;
+            // var dist=dist_2;
+            var t=t_2;
           }
           
-          else if(dist_1 > minimum_dist && dist_1 >= existing_intersection.distance){
-            var hit=hit_1;
-            var dist=dist_1; 
-          }
-
-          else
+          if(t_1 < minimum_dist || t_1 >= existing_intersection.distance){
             return existing_intersection; 
+          }
         }
 
         // One Solutions
         else if(discriminant == 0){
-          var sol=-b/a;
-          var hit=scale_vec(sol, ray.dir);
-          dist=Math.sqrt(dot(hit, hit));       
-          if(dist > minimum_dist || existing_intersection.distance < dist)
+          var t=-b/a;      
+          if(t < minimum_dist || existing_intersection.distance <= t)
               return existing_intersection;
         }
 
@@ -79,12 +74,12 @@ Declare_Any_Class( "Ball",              // The following data members of a ball 
           return existing_intersection; 
 
         //Compute intersection points and normal
-          var intersection_pt=add(ray.origin, hit);
-          var normal=subtract(intersection_pt, this.position);
-
-          existing_intersection.normal = normalize(normal);
+          var trans = transpose(inv_trans);
+          var intersection_pt=add(S, scale_vec(t, C));
+          intersection_pt = vec4(intersection_pt[0], intersection_pt[1], intersection_pt[2], 1);
+          existing_intersection.normal = mult_vec(trans, intersection_pt).slice(0,3);
           existing_intersection.ball=this;
-          existing_intersection.distance=dist; 
+          existing_intersection.distance=t; 
 
         return existing_intersection;
 
@@ -152,37 +147,121 @@ Declare_Any_Class( "Ray_Tracer",
         var closest_intersection = { distance: Number.POSITIVE_INFINITY, ball: null, normal: null }    // An empty intersection object
         
         for(let b of this.balls){
-          b.intersect(ray, closest_intersection, 1);
+          b.intersect(ray, closest_intersection, 0.0001);
           //Check whether the ray intersects anything at all
-          if( !closest_intersection.ball ) return this.color_missed_ray( ray );
         }
+        if( !closest_intersection.ball ) return this.color_missed_ray( ray );
 
-        var ball=closest_intersection.ball;
-        var intersection_pt = ray.origin + closest_intersection.distance;
-        var L = ray.origin - intersection_pt; 
-        var N = ball.normal; 
-        var V = add(ball.position, ball.normal);
-        var H = add(L, V);
-        H = scale_vec(1/length(H), H);
+        /*
+        P = closest intersection
+        color_local=ShadowRay(light1, P);
+        color_local=ShadowRay(LightN, P);
+        color_reflect = raytrace(reflected_ray);
+        color_refract = raytrace(refracted_ray);
+        color=color_local + krfl*color_reflect + krfl*color_refract 
+        return color; 
+        */
 
+        // Get Closest Intersection
+        var intersection_pt = add(ray.origin, scale_vec(closest_intersection.distance, ray.dir) );
+        intersection_pt=intersection_pt.slice(0,3);
 
-        vec3 surface_color = ball.k_a * ball.color + 
-            for var p in lights {
-             this.lights[p].color * (ball.k_d * ( Math.abs(dot(normalize(ball.normal), L) ) * (ball.color) 
-              + ball.k_s * ( Math.abs(dot(ray.normal, H)^ball.n) ) 
-              * vec3(0, 0, 0) ) ;
-           }
-            
-            vec3 pixel_color = surface_color + (vec3(0, 0, 0) - surface_color) *(ball.k_r * trace().slice(0,3)
-              + ball.k_refract * trace().slice(0,3) );
+        var ball = closest_intersection.ball; 
 
-
-        if(closest_intersection.distance>0){
-          return Color(1, 0, 0, 1);
-        }
+        if(closest_intersection.distance>0)
         
+        if(light_to_check!=1){
+
+              var L = scale_vec(-1, ray.dir).slice(0,3); 
+              var N = normalize(closest_intersection.normal); 
+
+              var V = scale_vec(-1*closest_intersection.distance, ray.dir);
+              V = V.slice(0,3);
+              V = normalize(V);
+
+
+              var surface_color = scale_vec(ball.k_a, ball.color);
+              var diffusion = vec3(0, 0, 0, 0);
+              var specular = vec3(0, 0, 0, 0);
+
+          for (let p of this.lights) {
+
+              var shadow_dir = vec4(p.position[0]-intersection_pt[0], p.position[1]-intersection_pt[1], p.position[2]-intersection_pt[2], 0);
+              var shadow_ray = {origin: vec4(intersection_pt[0], intersection_pt[1], intersection_pt[2], 1), dir: shadow_dir}; 
+              var shadow_int = { distance: Number.POSITIVE_INFINITY, ball: null, normal: null };
+              
+              for( let b of this.balls){
+                b.intersect(shadow_ray, shadow_int, 0.0001)
+              }
+
+             if(shadow_int.distance > 1){
+                
+              var I = vec3(p.position[0]-intersection_pt[0], p.position[1]-intersection_pt[1], p.position[2]-intersection_pt[2]);
+              I = normalize(I); 
+  
+             // k_a * sphere color + for each point light source (p) {
+             // this.lights[p].color * (
+             // k_d * ( N dot L, positive only) * (the sphere's color) +
+             // k_s * ( (N dot H)^n, positive only) * white 
+             // )
+              var light_color = p.color.slice(0,3);
+
+             if(dot(N, I) > 0){
+                var term1 = ball.k_d*dot(N, I);
+                term1 = scale_vec(term1, ball.color);
+                term1 = mult_3_coeffs(light_color, term1);
+                diffusion = add(diffusion, term1); 
+              }
+
+             var R = subtract(scale_vec(dot(N, I)*2, N), I);
+             R = normalize(R);
+             if(dot(V, R) > 0){
+                var term2 = dot(V, R);
+                term2 = Math.pow(term2, ball.n);
+                term2 = ball.k_s * term2;
+                term2 = scale_vec(term2, vec3(1, 1, 1));
+                term2 = mult(light_color, term2); 
+                specular = add(specular, term2);
+              }
+
+          }
+        }
+
+        surface_color = add(surface_color, diffusion);
+        surface_color = add(surface_color, specular);
+
+        // vec3 pixel_color =  surface_color + (vec3(0, 0, 0) - surface_color) *(ball.k_r * trace().slice(0,3) 
+        //                      + ball.k_refract * trace().slice(0,3) );
+
+        // REFLECTED RAY
+        var reflect_dir = subtract(scale_vec(dot(N, ray.dir.slice(0,3))*2, N), ray.dir.slice(0,3));
+        reflect_dir = normalize(reflect_dir);
+        var reflected_ray = { origin: intersection_pt, dir: reflect_dir};
+        var color_reflected = subtract(vec3(0, 0, 0), surface_color);
+        var complement_alpha = subtract(vec3(1, 1, 1) , surface_color); 
+        var color_remain = mult(complement_alpha, scale_vec(1/ball.k_r, color_remaining) );
+        var temp1 = this.trace(reflected_ray, color_remain, false, false).slice(0, 3);
+        temp1= scale_vec(ball.k_r, temp1);
+        color_reflected = mult(color_reflected, temp1);
+        color_reflected = vec4(color_reflected[0], color_reflected[1], color_reflected[2], 1); 
+      
+
+        // REFRACTED RAY
+        // var refract_dir = 
+        // var refract_ray = {origin: intersection_pt, dir: }
+        // var color_refract = ball.k_refract;  
+        // var temp2 = this.trace(refract_ray, scale_vec(1/ball.k_refract, color_remaining), false).slice(0,3);
+        // temp1 = mult(temp1, temp2); 
+        // var pixel_color = add(surface_color, temp1);
+        // temp1 = mult(ball.k_refract, this.trace().slice(0,3)); 
+        // pixel_color = add(pixel_color, temp1);
+
+        var pixel_color=vec4(surface_color[0], surface_color[1], surface_color[2], 1);
+        pixel_color = add(pixel_color, color_reflected);
           
-        return pixelColor;
+          return pixel_color;
+        }
+        return "shadowed";
       },
     'parse_line'( tokens )            // Load the lines from the textbox into variables
       { for( let i = 1; i < tokens.length; i++ ) tokens[i] = Number.parseFloat( tokens[i] );
