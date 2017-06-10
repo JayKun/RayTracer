@@ -150,17 +150,8 @@ Declare_Any_Class( "Ray_Tracer",
           b.intersect(ray, closest_intersection, 0.0001);
           //Check whether the ray intersects anything at all
         }
+        
         if( !closest_intersection.ball ) return this.color_missed_ray( ray );
-
-        /*
-        P = closest intersection
-        color_local=ShadowRay(light1, P);
-        color_local=ShadowRay(LightN, P);
-        color_reflect = raytrace(reflected_ray);
-        color_refract = raytrace(refracted_ray);
-        color=color_local + krfl*color_reflect + krfl*color_refract 
-        return color; 
-        */
 
         // Get Closest Intersection
         var intersection_pt = add(ray.origin, scale_vec(closest_intersection.distance, ray.dir) );
@@ -168,12 +159,7 @@ Declare_Any_Class( "Ray_Tracer",
 
         var ball = closest_intersection.ball; 
 
-        if(closest_intersection.distance>0)
-        
-        if(light_to_check!=1){
-
-              var L = scale_vec(-1, ray.dir).slice(0,3); 
-              var N = normalize(closest_intersection.normal); 
+        var N = normalize(closest_intersection.normal); 
 
               var V = scale_vec(-1*closest_intersection.distance, ray.dir);
               V = V.slice(0,3);
@@ -181,8 +167,8 @@ Declare_Any_Class( "Ray_Tracer",
 
 
               var surface_color = scale_vec(ball.k_a, ball.color);
-              var diffusion = vec3(0, 0, 0, 0);
-              var specular = vec3(0, 0, 0, 0);
+              var diffusion = vec3(0, 0, 0);
+              var specular = vec3(0, 0, 0);
 
           for (let p of this.lights) {
 
@@ -220,7 +206,7 @@ Declare_Any_Class( "Ray_Tracer",
                 term2 = Math.pow(term2, ball.n);
                 term2 = ball.k_s * term2;
                 term2 = scale_vec(term2, vec3(1, 1, 1));
-                term2 = mult(light_color, term2); 
+                term2 = mult_3_coeffs(light_color, term2); 
                 specular = add(specular, term2);
               }
 
@@ -230,38 +216,63 @@ Declare_Any_Class( "Ray_Tracer",
         surface_color = add(surface_color, diffusion);
         surface_color = add(surface_color, specular);
 
-        // vec3 pixel_color =  surface_color + (vec3(0, 0, 0) - surface_color) *(ball.k_r * trace().slice(0,3) 
+        // vec3 pixel_color =  surface_color + (vec3(1, 1, 1) - surface_color) *(ball.k_r * trace().slice(0,3) 
         //                      + ball.k_refract * trace().slice(0,3) );
 
-        // REFLECTED RAY
-        var reflect_dir = subtract(scale_vec(dot(N, ray.dir.slice(0,3))*2, N), ray.dir.slice(0,3));
-        reflect_dir = normalize(reflect_dir);
-        var reflected_ray = { origin: intersection_pt, dir: reflect_dir};
-        var color_reflected = subtract(vec3(0, 0, 0), surface_color);
+        // var reflection = vec3(0, 0, 0);
+        // var refraction = vec3(0, 0, 0);
+
+        // var color_reflect_remain;
+        // var color_refract_remain;
+        // if(is_primary){
+        //   color_reflect_remain = color_remaining;
+        //   color_refract_remain = color_remaining; 
+        // }
+        // else{
+        //   var color_compliment = Color(1, 1, 1, 1).slice(0, 3) - color_remaining;
+        //   color_reflect_remain = scale_vec(1/ball.k_r, color_remaining);
+        //   color_refract_remain = scale_vec(1/ball.k_refract, color_remaining);
+          
+        //   color_reflect_remain = mult_3_coeffs(color_compliment, color_reflect_remain);
+        //   color_refract_remain = mult_3_coeffs(color_compliment, color_refract_remain);
+        // }
+
+        // var L = scale_vec(-1, normalize(ray.dir.slice(0,3)));
+        // var R2 = normalize(subtract(scale_vec(2*dot(N,L),N),L)); 
+        // var reflect_ray = { origin: intersection_pt.concat(1), dir: R2.concat(0) };
+
+
+        var L = scale_vec(-1, normalize(ray.dir.slice(0,3)));
+        var reflect_dir = normalize(subtract(scale_vec(2*dot(N,L),N),L));
+        var reflected_ray = vec4(reflect_dir[0], reflect_dir[1], reflect_dir[2], 0);
+        var reflected_ray = { origin: intersection_pt.concat(1), dir: reflect_dir.concat(0)};
+        var color_reflected = subtract(vec3(1, 1, 1), surface_color);
+
         var complement_alpha = subtract(vec3(1, 1, 1) , surface_color); 
-        var color_remain = mult(complement_alpha, scale_vec(1/ball.k_r, color_remaining) );
-        var temp1 = this.trace(reflected_ray, color_remain, false, false).slice(0, 3);
+        if(!is_primary)
+        var color_remain = mult_3_coeffs(complement_alpha, scale_vec(1/ball.k_r, color_remaining) );
+        else
+          color_remain = color_remaining;
+        var temp1 = this.trace(reflected_ray, color_remain, false, 0).slice(0, 3);
         temp1= scale_vec(ball.k_r, temp1);
         color_reflected = mult(color_reflected, temp1);
-        color_reflected = vec4(color_reflected[0], color_reflected[1], color_reflected[2], 1); 
-      
+        color_reflected = vec4(color_reflected[0], color_reflected[1], color_reflected[2], 0); 
 
-        // REFRACTED RAY
-        // var refract_dir = 
-        // var refract_ray = {origin: intersection_pt, dir: }
-        // var color_refract = ball.k_refract;  
-        // var temp2 = this.trace(refract_ray, scale_vec(1/ball.k_refract, color_remaining), false).slice(0,3);
-        // temp1 = mult(temp1, temp2); 
-        // var pixel_color = add(surface_color, temp1);
-        // temp1 = mult(ball.k_refract, this.trace().slice(0,3)); 
-        // pixel_color = add(pixel_color, temp1);
+        var r = closest_intersection.ball.refract_index;
+          L = normalize(ray.dir.slice(0,3));
+          var c = dot(scale_vec(-1,N),L);
+          var refract_ray1 = scale_vec(r,L);
+          var refract_ray2 = scale_vec(r*c-Math.sqrt(1-Math.pow(r,2)*(1-Math.pow(c,2))),N);
+          var refract_ray3 = normalize(add(refract_ray1,refract_ray2));
+          var refract_ray = { origin: intersection_pt.concat(0), dir: refract_ray3.concat(0) };
+          var refract_color = scale_vec(closest_intersection.ball.k_refract,this.trace(refract_ray,color_remaining_refract,false).slice(0,3)) ;
+
 
         var pixel_color=vec4(surface_color[0], surface_color[1], surface_color[2], 1);
         pixel_color = add(pixel_color, color_reflected);
-          
-          return pixel_color;
-        }
-        return "shadowed";
+        return pixel_color;
+        
+        
       },
     'parse_line'( tokens )            // Load the lines from the textbox into variables
       { for( let i = 1; i < tokens.length; i++ ) tokens[i] = Number.parseFloat( tokens[i] );
