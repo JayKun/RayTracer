@@ -48,7 +48,9 @@ Declare_Any_Class( "Ball",              // The following data members of a ball 
         if(discriminant > 0 ){
           var t_1=(-b+term)/a;
           var t_2=(-b-term)/a; 
-
+          var flag = 0
+          if(t_2 < minimum_dist && t_1 > minimum_dist)
+            flag =1; 
           if(t_1 < minimum_dist || t_1 > t_2){
                   t_1 = t_2; 
           }
@@ -67,7 +69,7 @@ Declare_Any_Class( "Ball",              // The following data members of a ball 
 
         // No Solution
         else
-          return existing_intersection; 
+          return; 
 
         //Compute intersection points and normal
           var trans = transpose(inv_trans);
@@ -75,7 +77,7 @@ Declare_Any_Class( "Ball",              // The following data members of a ball 
           intersection_pt = vec4(intersection_pt[0], intersection_pt[1], intersection_pt[2], 1);
           var normal = mult_vec(trans, intersection_pt).slice(0,3);
           if(t_1 < minimum_dist)
-            normal = scale_vec(-1, normal);
+            return;
           existing_intersection.normal = normal
           existing_intersection.ball=this;
           existing_intersection.distance=t_1; 
@@ -251,6 +253,7 @@ Declare_Any_Class( "Ray_Tracer",
           color_refract_remain = mult_3_coeffs(color_compliment, color_refract_remain);
         }
 
+        // Reflected Ray
         var L = scale_vec(-1, normalize(ray.dir.slice(0,3)));
         var reflect_dir = normalize(subtract(scale_vec(2*dot(N,L),N),L));
         var reflected_ray = { origin: intersection_pt.concat(1), dir: reflect_dir.concat(0)};
@@ -261,9 +264,7 @@ Declare_Any_Class( "Ray_Tracer",
         color_reflected = mult(color_reflected, trace1);
         color_reflected = vec4(color_reflected[0], color_reflected[1], color_reflected[2], 0); 
 
-        var color_remaining_update = mult_3_coeffs(color_remaining, subtract(Color(1,1,1,1).slice(0,3),surface_color));
-        var color_remaining_refract = scale_vec(closest_intersection.ball.k_refract, color_remaining_update);
-
+        // Refracted Ray
         var r = ball.refract_index;
         L = scale_vec(1, ray.dir.slice(0,3));
         var c = dot(scale_vec(-1,N),L);
