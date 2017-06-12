@@ -40,49 +40,36 @@ Declare_Any_Class( "Ball",              // The following data members of a ball 
         var a = dot(C, C);
         var b = dot(S, C);
         var c = dot(S, S) -1; 
-
+        var flag = 0;
         var discriminant = b*b - a*c;
         var term=Math.sqrt(discriminant);
 
-        // 2 Solutions
-        if(discriminant > 0 ){
-          var t_1=(-b+term)/a;
-          var t_2=(-b-term)/a; 
-          var flag = 0
-          if(t_2 < minimum_dist && t_1 > minimum_dist)
-            flag =1; 
-          if(t_1 < minimum_dist || t_1 > t_2){
-                  t_1 = t_2; 
-          }
-          
-          if(t_1 < minimum_dist || t_1 >= existing_intersection.distance){
-            return ; 
-          }
-        }
-
-        // One Solutions
-        else if(discriminant == 0){
-          var t_1=-b/a;      
-          if(t_1 < minimum_dist || existing_intersection.distance <= t_1)
-              return;
-        }
 
         // No Solution
-        else
+        if(discriminant  < 0)
           return; 
+        else{
+          var t1=(-b+term)/a;
+          var t2=(-b-term)/a; 
+
+          if(t1 < minimum_dist || t1 > t2)
+            t1 = t2;
+          if(t1 < minimum_dist || t1 >= existing_intersection.distance)
+            return;
+        }
 
         //Compute intersection points and normal
           var trans = transpose(inv_trans);
-          var intersection_pt=add(S, scale_vec(t_1, C));
+          var intersection_pt=add(S, scale_vec(t1, C));
           intersection_pt = vec4(intersection_pt[0], intersection_pt[1], intersection_pt[2], 1);
           var normal = mult_vec(trans, intersection_pt).slice(0,3);
-          if(t_1 < minimum_dist)
-            return;
+          if(flag)
+            normal = scale_vec(-1, normal);
           existing_intersection.normal = normal
           existing_intersection.ball=this;
-          existing_intersection.distance=t_1; 
+          existing_intersection.distance=t1; 
 
-        return existing_intersection;
+        return;
 
         }
   } );
@@ -104,7 +91,7 @@ Declare_Any_Class( "Ray_Tracer",
         this.scratchpad.width = this.width;  this.scratchpad.height = this.height;
         this.imageData          = new ImageData( this.width, this.height );     // Will hold ray traced pixels waiting to be stored in the texture
         this.scratchpad_context = this.scratchpad.getContext('2d');             // A hidden canvas for assembling the texture
-
+        //this.level = 0;
         this.background_functions =                 // These convert a ray into a color even when no balls were struck by the ray.
           { waves: function( ray )
             { return Color( .5*Math.pow( Math.sin( 2*ray.dir[0] ), 4 ) + Math.abs( .5*Math.cos( 8*ray.dir[0] + Math.sin( 10*ray.dir[1] ) + Math.sin( 10*ray.dir[2] ) ) ),
@@ -141,15 +128,17 @@ Declare_Any_Class( "Ray_Tracer",
     //        significant, proceed with the current recursion, computing the Phong model's brightness of each color.  When recursing, scale color_remaining down by k_r
     //        or k_refract, multiplied by the "complement" (1-alpha) of the Phong color this recursion.  Use argument is_primary to indicate whether this is the original
     //        ray or a recursion.  Use the argument light_to_check when a recursive call to trace() is for computing a shadow ray.
-
-
-        if( length( color_remaining ) < .3 )    return Color( 0, 0, 0, 1 );  // Each recursion, check if there's any remaining potential for the pixel to be brightened.
+        var shit = color_remaining.slice(); 
+        if( length( shit ) < .3 )    return Color( 0, 0, 0, 1 );  // Each recursion, check if there's any remaining potential for the pixel to be brightened.
 
         var closest_intersection = { distance: Number.POSITIVE_INFINITY, ball: null, normal: null }    // An empty intersection object
 
         if(is_primary)
         for(let b of this.balls){
-          b.intersect(ray, closest_intersection, 1);
+          b.intersect(ray, closest_intersection, 0.0001);
+          if(closest_intersection.distance <= this.near){
+            closest_intersection.normal = scale_vec(-1, closest_intersection.normal);
+          }
         }
         
         else
@@ -224,41 +213,26 @@ Declare_Any_Class( "Ray_Tracer",
         surface_color = add(surface_color, specular);
 
 
-        for(var i = 0; i < 3; i++)
-        {
-          if(surface_color[i]>1)
-            surface_color[i]=1;
-          if(surface_color[i]<0)
-            surface_color[i]=0;
-        }
-
         // vec3 pixel_color =  surface_color + (vec3(1, 1, 1) - surface_color) *(ball.k_r * trace().slice(0,3) 
         //                      + ball.k_refract * trace().slice(0,3) );
 
-        // var reflection = vec3(0, 0, 0);
-        // var refraction = vec3(0, 0, 0);
 
         var color_reflect_remain;
         var color_refract_remain;
-        if(!is_primary){
-          color_reflect_remain = color_remaining;
-          color_refract_remain = color_remaining; 
-        }
-        else{
-          var color_compliment = Color(1, 1, 1, 1).slice(0, 3) - color_remaining;
+          var color_compliment = subtract( Color(1,1,1,1).slice(0,3), surface_color);
+          //console.log("color_remain: " +color_remaining);
           color_reflect_remain = scale_vec(1/ball.k_r, color_remaining);
           color_refract_remain = scale_vec(1/ball.k_refract, color_remaining);
           
           color_reflect_remain = mult_3_coeffs(color_compliment, color_reflect_remain);
           color_refract_remain = mult_3_coeffs(color_compliment, color_refract_remain);
-        }
 
         // Reflected Ray
         var L = scale_vec(-1, normalize(ray.dir.slice(0,3)));
         var reflect_dir = normalize(subtract(scale_vec(2*dot(N,L),N),L));
         var reflected_ray = { origin: intersection_pt.concat(1), dir: reflect_dir.concat(0)};
         var color_reflected = subtract(vec3(1, 1, 1), surface_color);
-
+        //console.log(color_reflect_remain);
         var trace1 = this.trace(reflected_ray, color_reflect_remain, false, 0).slice(0, 3);
         trace1= scale_vec(ball.k_r, trace1);
         color_reflected = mult(color_reflected, trace1);
